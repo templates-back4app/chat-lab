@@ -1,0 +1,107 @@
+<!doctype html>
+<!-- File: public/demo.html · the minimal two-pane demo the dev server serves at /demo.html.
+     Two independent chat clients side by side against the LOCAL server (fixed dev keys — not secrets), so the
+     delivery the lab measures can also be felt by hand: type left, watch right. All rendering goes through
+     client/render.mjs (escaped, never injected as markup — asserted by test/render.test.mjs with a hostile
+     fixture); the reconnect button exercises client/chat-client.mjs's drop + race-safe recovery.
+     Demo chrome only: the tested logic lives in client/, and nothing here talks to any live backend. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>chat-lab demo</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; }
+  .panes { display: flex; gap: 16px; flex-wrap: wrap; }
+  .pane { flex: 1 1 320px; border: 1px solid #ccc; border-radius: 8px; padding: 12px; }
+  ul.log { list-style: none; padding: 0; max-height: 320px; overflow-y: auto; }
+  li.message { padding: 2px 0; border-bottom: 1px dotted #eee; }
+  li.message .author { font-weight: 600; margin-right: 6px; }
+  li.message.deleted .body { color: #999; }
+  li.message .time { color: #999; font-size: 11px; margin-left: 6px; }
+  .status { color: #666; font-size: 12px; min-height: 1em; }
+  input, button { font: inherit; }
+</style>
+</head>
+<body>
+<h1>chat-lab — two panes, one room</h1>
+<p>Local demo against <code>http://localhost:1342/parse</code>. Create users and a room first (sign up below
+creates the user; the first pane to create a room becomes its moderator and can add the second pane's user by id).</p>
+<div class="panes">
+  <section class="pane" data-pane="a"></section>
+  <section class="pane" data-pane="b"></section>
+</div>
+<script type="module">
+import { createChatClient } from '/client/chat-client.mjs';
+import { renderMessageHtml } from '/client/render.mjs';
+
+const SERVER = `${location.origin}/parse`;
+const APP_ID = 'chat-lab-dev';
+const JS_KEY = 'chat-lab-dev-js';
+
+async function rest(path, body, session) {
+  const headers = { 'Content-Type': 'application/json', 'X-Parse-Application-Id': APP_ID, 'X-Parse-Javascript-Key': JS_KEY };
+  if (session) headers['X-Parse-Session-Token'] = session;
+  const res = await fetch(`${SERVER}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  return { status: res.status, json: await res.json().catch(() => null) };
+}
+
+function pane(root) {
+  root.innerHTML = `
+    <div><input class="user" placeholder="username"> <input class="pw" type="password" placeholder="password">
+      <button class="signup">sign up</button> <button class="login">log in</button></div>
+    <div><input class="roomname" placeholder="room name"> <button class="createroom">create room</button></div>
+    <div><input class="roomid" placeholder="room id"> <button class="join">connect</button>
+      <button class="drop" title="TCP cut + race-safe recovery">drop & reconnect</button></div>
+    <div><input class="adduser" placeholder="userId to add"> <button class="add">addMember</button></div>
+    <div class="status"></div>
+    <ul class="log"></ul>
+    <div><input class="body" placeholder="message"> <button class="send">send</button></div>`;
+  const $ = (sel) => root.querySelector(sel);
+  const status = (t) => { $('.status').textContent = t; };
+  let session = null; let client = null;
+
+  const redraw = () => { $('.log').innerHTML = client ? client.sorted.map(renderMessageHtml).join('') : ''; };
+
+  $('.signup').onclick = async () => {
+    const r = await rest('/users', { username: $('.user').value, password: $('.pw').value });
+    status(r.status === 201 ? `signed up (${r.json.objectId})` : `sign-up failed: ${JSON.stringify(r.json)}`);
+    if (r.status === 201) session = r.json.sessionToken;
+  };
+  $('.login').onclick = async () => {
+    const r = await rest('/login', { username: $('.user').value, password: $('.pw').value });
+    status(r.status === 200 ? `logged in (${r.json.objectId})` : `login failed: ${JSON.stringify(r.json)}`);
+    if (r.status === 200) session = r.json.sessionToken;
+  };
+  $('.createroom').onclick = async () => {
+    const r = await rest('/functions/createRoom', { name: $('.roomname').value }, session);
+    status(r.status === 200 ? `room ${r.json.result.roomId} created (you are moderator)` : `createRoom failed: ${JSON.stringify(r.json)}`);
+    if (r.status === 200) $('.roomid').value = r.json.result.roomId;
+  };
+  $('.join').onclick = async () => {
+    client = createChatClient({
+      serverUrl: SERVER, appId: APP_ID, jsKey: JS_KEY, sessionToken: session, roomId: $('.roomid').value,
+      on: { message: redraw, recovered: (r) => status(`connected (caught up ${r.caughtUp}, buffered ${r.buffered})`), error: (e) => status(String(e)) },
+    });
+    try { await client.connect(); redraw(); } catch (e) { status(`connect failed: ${e.message}`); }
+  };
+  $('.drop').onclick = async () => {
+    if (!client) return;
+    client.dropConnection();
+    status('dropped — reconnecting in 2 s (messages sent meanwhile are caught up, deduplicated)…');
+    setTimeout(async () => { try { await client.connect(); redraw(); } catch (e) { status(`reconnect failed: ${e.message}`); } }, 2000);
+  };
+  $('.add').onclick = async () => {
+    const r = await rest('/functions/addMember', { roomId: $('.roomid').value, userId: $('.adduser').value }, session);
+    status(r.status === 200 ? `added ${$('.adduser').value}` : `addMember failed: ${JSON.stringify(r.json)}`);
+  };
+  $('.send').onclick = async () => {
+    if (!client) return status('connect first');
+    try { await client.sendMessage($('.body').value); $('.body').value = ''; } catch (e) { status(`send failed: ${e.message}`); }
+  };
+}
+
+document.querySelectorAll('.pane').forEach(pane);
+</script>
+</body>
+</html>

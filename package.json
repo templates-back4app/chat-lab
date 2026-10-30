@@ -1,0 +1,31 @@
+{
+  "name": "chat-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Companion lab for the Back4app blog post on real-time chat with Parse LiveQuery: private rooms for two fictitious companies (ACME, Borealis), delivery latency measured send-start to event, a race-safe reconnect client, and the full who-can-listen matrix as raw REST + raw WebSocket frames.",
+  "license": "MIT",
+  "author": "Back4app Engineering",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:server": "node scripts/dev-server.mjs",
+    "setup": "node scripts/setup.mjs",
+    "budget": "node scripts/request-budget.mjs",
+    "measure:delivery": "node scripts/measure-delivery.mjs",
+    "measure:fanout": "node scripts/measure-fanout.mjs",
+    "measure:reconnect": "node scripts/measure-reconnect.mjs",
+    "measure:revocation": "node scripts/measure-revocation.mjs",
+    "measure:throttle": "node scripts/measure-throttle.mjs",
+    "measure:history": "node scripts/measure-history.mjs",
+    "pretest": "node scripts/evidence.mjs --reset",
+    "test": "node --test --test-concurrency=1 'test/*.test.mjs'",
+    "posttest": "node scripts/evidence.mjs"
+  },
+  "devDependencies": {
+    "express": "^5.1.0",
+    "parse-server": "^7.5.4",
+    "ws": "^8.18.0"
+  }
+}
