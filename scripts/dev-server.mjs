@@ -78,6 +78,14 @@ export async function startServer({ port = LOCAL.PORT, databaseURI = LOCAL.DATAB
 
   const app = express();
   app.disable('x-powered-by');
+  // COUNT_REQUESTS=1 (request-budget inventory, amendment CC4): count every HTTP request this in-process
+  // server handles and append one JSON line per server lifetime to docs/notes/.request-counts.jsonl, tagged
+  // with the suite file that started it. `npm run budget` reads the latest complete run.
+  let requestCount = null;
+  if (process.env.COUNT_REQUESTS === '1') {
+    requestCount = { n: 0 };
+    app.use((_req, _res, next) => { requestCount.n++; next(); });
+  }
   if (!quiet) {
     app.use((req, _res, next) => { // one line per request, so the diary can show what a client really sent
       console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
@@ -109,6 +117,13 @@ export async function startServer({ port = LOCAL.PORT, databaseURI = LOCAL.DATAB
       // would deadlock the suite's teardown, so destroy whatever is left.
       await new Promise((r) => { http.close(r); if (http.closeAllConnections) http.closeAllConnections(); });
       await server.handleShutdown();
+      if (requestCount) {
+        const { appendFileSync, mkdirSync } = await import('node:fs');
+        const dir = path.join(ROOT, 'docs', 'notes');
+        mkdirSync(dir, { recursive: true });
+        appendFileSync(path.join(dir, '.request-counts.jsonl'),
+          JSON.stringify({ suite: path.basename(process.argv[1] || 'unknown'), requests: requestCount.n, at: new Date().toISOString() }) + '\n');
+      }
     },
   };
 }

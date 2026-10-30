@@ -145,6 +145,7 @@ export function createChatClient(opts) {
    * algorithm does not distinguish them (the first connect is a reconnect from the epoch).
    */
   async function connect() {
+    const tStart = (globalThis.performance || Date).now();
     ws = new WS(lqUrl);
     const myRequestId = ++requestId;
 
@@ -209,16 +210,23 @@ export function createChatClient(opts) {
       sessionToken: opts.sessionToken,
     }));
     await subscribed;
+    const tAck = (globalThis.performance || Date).now();
     if (on.subscribed) await on.subscribed(); // test injection point: sends that land DURING recovery
 
     // 3. paginated catch-up, 4.+5. dedup + reconcile the buffer against it.
+    const pagesBefore = counters.pages;
     await catchUp();
+    const tCaughtUp = (globalThis.performance || Date).now();
     const buffered = buffer;
     buffer = [];
     recovering = false;
     for (const msg of buffered) applyAndCount(msg);
-    if (on.recovered) on.recovered({ caughtUp: counters.caughtUp, buffered: buffered.length, counters: { ...counters } });
-    return { caughtUp: counters.caughtUp, buffered: buffered.length };
+    const result = {
+      caughtUp: counters.caughtUp, buffered: buffered.length,
+      ackMs: tAck - tStart, catchUpMs: tCaughtUp - tAck, catchUpPages: counters.pages - pagesBefore,
+    };
+    if (on.recovered) on.recovered({ ...result, counters: { ...counters } });
+    return result;
   }
 
   return {

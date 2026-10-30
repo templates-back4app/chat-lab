@@ -7,3 +7,4 @@ node_modules/
 logs/
 .files/
 docs/evidence/.rows-*.jsonl
+docs/notes/.request-counts.jsonl
