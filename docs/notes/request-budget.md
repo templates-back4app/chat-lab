@@ -53,3 +53,9 @@ that is exactly why the granularity probe is the FIRST live step, and why M5 run
 
 Session count: each suite file signs up its own personas (fresh sessions per run, run-prefixed); no
 session is reused across suites, and testCleanup deletes the run's users and sessions afterwards.
+
+## Live probe note (2026-11-02)
+The dashboard's Plan Usage counter lags: after the full live phase (suite + 6 measurement scripts, thousands of
+HTTP requests) it still displayed the pre-run value of 58 requests with "Last Update" showing the same day.
+The HTTP-vs-billable-operations correction CANNOT be read same-day; re-read Plan Usage ≥1 day later and
+correct this file then. Nothing here is corrected yet.

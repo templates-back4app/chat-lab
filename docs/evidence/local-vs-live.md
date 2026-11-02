@@ -1,21 +1,13 @@
-# Local vs. live — differences observed between the local parse-server and Back4app
+# Local vs live — where the runs differed (2026-11-02)
 
-**Status: live phase not run yet (Phase A is local-only).** This file is the designated place for every
-difference between the local run (parse-server ^7, Postgres adapter, loopback) and the Back4app run (Parse
-Server, MongoDB, managed LiveQuery at `wss://<subdomain>.b4a.io`). Only the live run is quoted in the article;
-a local-vs-live difference is a finding, not a bug, and lands here with both values and dates.
-
-## Expected differences to check (from the local run and sibling repos — verify, do not assume)
-
-| Surface | Local observation (2026-10-30) | Live: to verify |
+| What | Local (parse-server 7.5.4, Postgres, loopback) | Live (Back4app, Parse 7.5.2, MongoDB, USA East, Free) |
 |---|---|---|
-| CLP refusal codes | anonymous find/get on member-readable classes → HTTP 404, Parse 101 "Permission denied, user needs to be authenticated" | code pairs may differ on MongoDB/Back4app |
-| Anonymous LiveQuery subscribe | `subscribed` acknowledged, zero events (event-time rejection), frames `connected,subscribed` | connect-time vs event-time rejection is a finding either way (T1) |
-| LiveQuery event on soft delete | `op:update` carrying the redacted body (the row keeps matching the room filter) | update vs leave on the managed server (T6/B3) |
-| Open-subscription auth propagation | grant (T7): first event ~4.9 s after addMember; revocation (T8): last event ~5.0 s, silent by ~6.6 s — the LiveQuery server's session/role cache (default cacheTimeout 5 s) | Back4app's cache configuration may differ; T8 is re-measured with 10 runs (B4), T7 recorded |
-| Signed ack→event interval (B1) | consistently NEGATIVE on loopback (the event beats the REST ack by ~0.5–1 ms) | sign and magnitude on a real network path |
-| Ordering (T9/H5) | 50/50 delivered; arrival order differed from (createdAt, objectId) order at 22 of 50 positions; 14 messages shared a createdAt millisecond | record the live distribution; no guarantee claimed either way |
-| Equal timestamps | forced via SQL below the API (T10c, local-only); pagination exact with the (timestamp, objectId) cursor | not forceable live; natural collisions recorded by T9 |
-| Throttle | none locally (M5 reports cap reached, zero 155s — mechanics only) | HTTP 400 / Parse 155 on the free plan (H6) |
-| Index behaviour (M6) | first vs deep 50-row page at 1,000 and 10,000 messages, loopback | MongoDB + real plan; check the Index Manager after setupSchema |
-| Billing granularity (CC4) | n/a locally | Plan Usage delta after a known workload — the FIRST live step |
+| Suite | 34/34 pass | 28 pass, 0 fail, 6 skipped (master-key/SQL-only rows; reasons printed, local file holds them) |
+| M0 baseline (REST round-trip) | p50 8.2 ms | p50 403.6 / p95 475.3 ms (n=100) |
+| M1 headline (send-start → event) | p50 7.8 / p95 9.8 ms | p50 404.6 / p95 507.6 ms (n=100, 0 lost, 0 dup) |
+| Ack→event signed interval | negative in 99/100 | negative in 94/100 (median −1.3 ms) — the event usually beats the sender's own REST ack on both targets |
+| Fan-out at 50 subscribers | spread p50 2.2 ms, 0 loss | spread p50 5.8 / p95 48.4 ms, 0 loss / 0 dup / 0 disconnect in 5,000 deliveries |
+| Reconnect (10 runs) | recovered 10/10, zero server replay | recovered 10/10 via 1-page catch-up every run; catch-up 416–514 ms; resubscribe ack ~2.4–2.6 s dominates total (~2.8–3.1 s); dedup absorbed 1 overlap per run; 0 dead-socket deliveries |
+| Revocation (10 runs, this room model) | fresh read refused ~2 ms; LQ last event median 4,581 ms | fresh read refused min 400 / median 412 / max 514 ms; LQ last event min 3,615 / median 4,445 / max 4,589 ms; silence confirmed ~7.7 s |
+| History M6 | ANOMALY: first page (p50 16.5 ms) slower than deep page (10.4 ms) at 10k | did NOT reproduce: 10k first page p50 442.8, deep 418.9 ms — flat, backed by message_room_createdAt |
+| Billing granularity (CC4 probe) | n/a | Plan Usage counter lags ≥ hours (still "58 requests" after thousands of calls the same day); HTTP-vs-billable delta unreadable same-day — re-read the dashboard a day later before correcting the budget |
